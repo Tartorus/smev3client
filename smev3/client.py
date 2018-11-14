@@ -2,25 +2,27 @@ import uuid
 from suds.client import Client
 
 from smev3.exceptions import SmevClientError
-from smev3.plugins import ContentPlugin, UPRIDPlugin, SignPlugin
+from smev3.plugins import ContentPlugin, SignPlugin
 
 
 class BaseSmev3Client(Client):
 
-    SMEV_EXEC_URL = 'http://smev3-d.test.gosuslugi.ru:7500/ws?wsdl'
+    SMEV_EXEC_URL = 'http://smev3-d.test.gosuslugi.ru:7500/smev/v1.2/ws?wsdl'
     PRIVATE_KEY_FILE = ''
     PASSWORD = None
     CERTIFICATE_FILE = ''
 
     def __init__(self, content_plugin):
-        plugins = [SignPlugin(cert_path=self.CERTIFICATE_FILE,
-                              pkey_path=self.PRIVATE_KEY_FILE,
-                              pkey_password=self.PASSWORD)]
+        plugins = []
 
         if content_plugin:
             if not isinstance(content_plugin, ContentPlugin):
                 raise SmevClientError('Content plugin is not instance of ContentPlugin')
             plugins.append(content_plugin)
+
+        plugins.append(SignPlugin(cert_path=self.CERTIFICATE_FILE,
+                                  pkey_path=self.PRIVATE_KEY_FILE,
+                                  pkey_password=self.PASSWORD))
 
         super().__init__(self.SMEV_EXEC_URL, plugins=plugins)
 

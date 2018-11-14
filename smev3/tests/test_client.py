@@ -1,4 +1,5 @@
 from unittest import TestCase
+from unittest.mock import patch
 
 from smev3.client import BaseSmev3Client
 from smev3.plugins import UPRIDPlugin, SignPlugin
@@ -6,7 +7,9 @@ from smev3.plugins import UPRIDPlugin, SignPlugin
 
 class TestBaseSmev3Client(TestCase):
 
-    def test(self):
+    @patch('smev3.plugins.uuid.uuid4', return_value='ab7fcb62-e725-11e8-9e70-509a4cba3fff')
+    @patch('smev3.client.uuid.uuid1', return_value='ab7fcb62-e725-11e8-9e70-509a4cba3fff')
+    def test(self, *mocks):
         plugin = UPRIDPlugin(dict(routing_code='DEV',
                                   passport_series='1111',
                                   passport_number='111111',
@@ -14,9 +17,15 @@ class TestBaseSmev3Client(TestCase):
                                   middle_name='Test2',
                                   last_name='Test3',
                                   snils='229-785-346 20'))
-        client = BaseSmev3Client(content_plugin=plugin)
-        print(client)
-        print(client.send_request())
+
+        class Client(BaseSmev3Client):
+            PRIVATE_KEY_FILE = 'smev3/tests/smev18_test.key'
+            CERTIFICATE_FILE = 'smev3/tests/smev18_test.pem'
+
+        client = Client(content_plugin=plugin)
+        # print(client)
+        client.send_request()
+        # print(client.send_request())
         # print(client.factory.create('ns1:XMLDSigSignatureType'))
 
     def test_plugin_error(self):
@@ -39,5 +48,8 @@ class TestPlugins(TestCase):
 class TestSignPlugin(TestCase):
 
     def test(self):
-        content = SignPlugin().build_callerinform('ns2')
+        import os
+        print(os.getcwd())
+        content = SignPlugin(cert_path='smev3/tests/smev18_test.pem', pkey_path='smev3/tests/smev18_test.key')\
+            .build_callerinform('ns2')
         print(content.str(indent=4))
