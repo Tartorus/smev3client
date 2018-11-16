@@ -1,27 +1,48 @@
 import re
-from collections import OrderedDict
-from lxml.etree import tostring, Element, _Comment
+from lxml.etree import fromstring, tostring, Element, _Comment, SubElement
 
 TEXT = re.compile(r'[\w\d]')
 NAMESPACE = re.compile(r'^\{(.*)\}')
-FAKE_ATTRIB = re.compile(r'fake="fake"')
 
 
 class Smev3Transform:
     """Класс транформации xml элементов соггласно методочесикм рекомендациям"""
 
     def __init__(self, xml):
-        """:param xml :type lxml.Element"""
-        self.xml = xml
+        """:param xml :type bytes / string"""
+        if isinstance(xml, str):
+            xml = xml.encode()
+        self.xml = fromstring(xml)
         self.ns_num = 1
+        self.element_id = 1
+        self.attrib_map = dict()
 
-    def add_ns(self, uri, prefix_map):
+    def get_ns(self, uri, prefix_map):
+        """Формирование нового namespace.
+        :param uri :type str
+        :param prefix_map :type dict
+        :return str"""
         ns = 'ns%s' % self.ns_num
         self.ns_num += 1
         prefix_map[uri] = ns
         return ns
 
-    def transform(self, element, prefix_map=None):
+    def fake_attrib(self, attrib, prefix_map):
+        """ Создание "ложного" атрибута, для дальнейшей его подмена на настоящие атрибуты и namespaces.
+        :param attrib :type dict
+        :param prefix_map :type dict"""
+        attrib = self.sort_attrib(attrib, prefix_map)
+
+        if attrib:
+            fake_attrib = dict(fake='id_%s' % self.element_id)
+            str_fake = '%s="%s"' % tuple(*fake_attrib.items())
+            self.element_id += 1
+            self.attrib_map[str_fake] = attrib
+        else:
+            fake_attrib = dict()
+        return fake_attrib
+
+    def transform(self, element, prefix_map=None, parent=None):
         """Рекурсивная трансформация элементов.
         :param element :type lxml.Element
         :param prefix_map :type dict - мап namespaces
@@ -33,56 +54,67 @@ class Smev3Transform:
         ns = prefix_map.get(uri)
 
         if ns is None:
-            ns = self.add_ns(uri, prefix_map)
-
+            ns = self.get_ns(uri, prefix_map)
         ns_map = {ns: uri}
 
-        attrib = self.sort_attrib(element.attrib, prefix_map)
-        fake_attrib = dict(fake='fake') if attrib else dict()
-        new_element = Element(element.tag, attrib=fake_attrib, nsmap=ns_map)
+        fake_attrib = self.fake_attrib(element.attrib, prefix_map)
+        if parent is not None:
+            new_element = SubElement(parent, element.tag, attrib=fake_attrib, nsmap=ns_map)
+        else:
+            new_element = Element(element.tag, attrib=fake_attrib, nsmap=ns_map)
 
-        inner = ''
         children = element.getchildren()
         if children:
-            new_element.text = '{inner}'
             for child in element.getchildren():
                 if not isinstance(child, _Comment):
-                    inner += self.transform(child, dict(prefix_map))
+                    self.transform(child, dict(prefix_map), parent=new_element)
         else:
             if element.text and TEXT.findall(element.text):
-                new_element.text = element.text.strip()
-        string_element = tostring(new_element, method='c14n', exclusive=True,  with_comments=False) \
-            .decode() \
-            .format(inner=inner)
+                new_element.text = element.text
 
-        string_element = FAKE_ATTRIB.sub(str(attrib), string_element)
-        return string_element
+        return new_element
 
     def sort_attrib(self, attrib, prefix_map):
+        """Сортировака атрибутов и namespaces.
+        :param attrib :type dict
+        :param prefix_map :type dict
+        :return str"""
+
         l1 = []
         l2 = []
+        result = []
 
+        # разделям атрибуты с namespace и без
         for k, v in attrib.items():
             uri = NAMESPACE.search(k)
             if uri:
                 uri = uri.group(1)
-                ns = prefix_map.get(uri)
-                if ns is None:
-                    ns = self.add_ns(uri, prefix_map)
                 attr = NAMESPACE.sub('', k)
-                l1.append((attr, k, v))
+                l1.append((uri, attr, v))
             else:
                 l2.append((k, v))
 
-        l1.sort(key=lambda x: x[0])
-        l1 = [(k, v) for ns, k, v in l1]
-        l2.sort(key=lambda x: x[0])
-        l1.extend(l2)
-        result = []
-        for k, v in l1:
-            result.append('%s="%s"' % (k, v))
+        # сортируем атрибуты с namespace по локальному названию
+        l1.sort(key=lambda x: (x[0], x[1]))
 
+        l3 = []
+        for uri, attr, v in l1:
+            ns = prefix_map.get(uri)
+            if ns is None:
+                ns = self.get_ns(uri, prefix_map)
+                result.append('xmlns:%s="%s"' % (ns, uri))
+            # "собираем" атрибут
+            l3.append(('%s:%s' % (ns, attr), v))
+
+        l2.sort(key=lambda x: x[0])
+        l3.extend(l2)
+
+        for k, v in l3:
+            result.append('%s="%s"' % (k, v))
         return ' '.join(result)
 
     def run(self):
-        return self.transform(self.xml)
+        xml = tostring(self.transform(self.xml), method='c14n', exclusive=True,  with_comments=False).decode()
+        for k, v in self.attrib_map.items():
+            xml = xml.replace(k, v)
+        return xml

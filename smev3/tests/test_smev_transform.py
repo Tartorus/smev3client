@@ -21,9 +21,7 @@ class TestTransform(TestCase):
 	<qwe:elementTwo xmlns:qwe="http://test/2">asd</qwe:elementTwo>
 </elementOne>"""
         expected = """<ns1:elementOne xmlns:ns1="http://test/1"><ns2:elementTwo xmlns:ns2="http://test/2">asd</ns2:elementTwo></ns1:elementOne>"""
-
-        xml = etree.fromstring(in_data.encode())
-        result = Smev3Transform(xml).run()
+        result = Smev3Transform(in_data).run()
         self.assertEqual(expected, result)
 
     def test_2(self):
@@ -51,12 +49,8 @@ class TestTransform(TestCase):
 	</qwe:elementTwo>
 </elementOne> """
         expected = """<ns1:elementOne xmlns:ns1="http://test/1"><ns2:elementTwo xmlns:ns2="http://test/2"><ns3:elementThree xmlns:ns3="http://test/3"><ns1:elementFour> z x c </ns1:elementFour><ns2:elementFive> w w w </ns2:elementFive></ns3:elementThree><ns4:elementSix xmlns:ns4="http://test/3">eee</ns4:elementSix></ns2:elementTwo></ns1:elementOne>"""
-        xml = etree.fromstring(in_data.encode())
-        result = Smev3Transform(xml).run()
-        print(expected)
-        print()
-        print(result)
-        # self.assertEqual(expected, result)
+        result = Smev3Transform(in_data).run()
+        self.assertEqual(expected, result)
 
     def test_3(self):
         in_data = """<?xml version="1.0" encoding="UTF-8"?>
@@ -77,6 +71,17 @@ class TestTransform(TestCase):
 	</qwe:elementTwo>
 </elementOne>"""
         expected = """<ns1:elementOne xmlns:ns1="http://test/1"><ns2:elementTwo xmlns:ns2="http://test/2"><ns3:elementThree xmlns:ns3="http://test/3" xmlns:ns4="http://test/0" xmlns:ns5="http://test/a" ns4:attC="ccc" ns2:attF="fff" ns3:attD="ddd" ns3:attE="eee" ns5:attZ="zzz" attA="aaa" attB="bbb"></ns3:elementThree></ns2:elementTwo></ns1:elementOne>"""
-        xml = etree.fromstring(in_data.encode())
-        result = Smev3Transform(xml).run()
+        result = Smev3Transform(in_data).run()
+        self.assertEqual(expected, result)
+
+    def test_4(self):
+        in_data = """<ns2:SenderProvidedRequestData xmlns:ns2="urn://x-artefacts-smev-gov-ru/services/message-exchange/types/1.0" Id="SIGNED_BY_CONSUMER">
+ <MessagePrimaryContent xmlns="urn://x-artefacts-smev-gov-ru/services/message-exchange/types/basic/1.0">
+ <SomeRequest:SomeRequest xmlns:SomeRequest="urn://x-artifacts-it-ru/vs/smev/test/test-business-data/1.0">
+ <x xmlns="urn://x-artifacts-it-ru/vs/smev/test/test-business-data/1.0">qweqwe</x>
+ </SomeRequest:SomeRequest>
+ </MessagePrimaryContent>
+</ns2:SenderProvidedRequestData>"""
+        expected = """<ns1:SenderProvidedRequestData xmlns:ns1="urn://x-artefacts-smev-gov-ru/services/message-exchange/types/1.0" Id="SIGNED_BY_CONSUMER"><ns2:MessagePrimaryContent xmlns:ns2="urn://x-artefacts-smev-gov-ru/services/message-exchange/types/basic/1.0"><ns3:SomeRequest xmlns:ns3="urn://x-artifacts-it-ru/vs/smev/test/test-business-data/1.0"><ns3:x>qweqwe</ns3:x></ns3:SomeRequest></ns2:MessagePrimaryContent></ns1:SenderProvidedRequestData>"""
+        result = Smev3Transform(in_data).run()
         self.assertEqual(expected, result)
