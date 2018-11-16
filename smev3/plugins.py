@@ -76,7 +76,7 @@ class SignPlugin(BasePlugin):
 
     C_14 = 'http://www.w3.org/2001/10/xml-exc-c14n#'
     SIGNATURE_METHOD = 'http://www.w3.org/2001/04/xmldsig-more#gostr34102001-gostr3411'
-    TRANSFORM = 'urn://smev-gov-ru/xmldsig/transform'
+    TRANSFORM = 'urn://smev-gov-ru/xmldsig/run'
     DIGEST_METHOD = 'http://www.w3.org/2001/04/xmldsig-more#gostr3411'
 
     DIGEST_VALUE = '{DIGESTVALUE}'
