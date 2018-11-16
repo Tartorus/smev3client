@@ -7,6 +7,7 @@ from suds.plugin import MessagePlugin
 from suds.sax.element import Element
 
 from smev3.exceptions import PluginError
+from smev3.transform import Smev3Transform
 from smev3.utils import load_certificate, encode_c14n, get_gost_r_3410_digest, get_gost_r_34102001_signature
 
 
@@ -92,6 +93,7 @@ class SignPlugin(BasePlugin):
         self.cert_path = cert_path
         self.pkey_password = pkey_password
         self.URI_ID = 'UNIQ_' + str(uuid.uuid4())
+        self.URI_ID = 'SIGNED_BY_CONSUMER'
 
     def marshalled(self, context):
         request_container = context.envelope.childAtPath('Body/SendRequestRequest')
@@ -100,16 +102,31 @@ class SignPlugin(BasePlugin):
         request_container.append(self.build_callerinform(request_container.prefix))
 
     def sending(self, context):
-        with open('in.xml', 'wb') as o:
-            o.write(context.envelope)
-        xml = encode_c14n(etree.fromstring(context.envelope))
-        with open('canon.xml', 'wb') as o:
-            o.write(xml)
-        xml = self.set_digest_value(xml)
-        xml = self.set_signature_value(xml)
-        context.envelope = xml
-        with open('signed.xml', 'wb') as o:
-            o.write(context.envelope)
+        xml_doc = etree.fromstring(context.envelope)
+        self.set_digest_value(xml_doc)
+        self.set_signature_value(xml_doc)
+        with open('out.xml', 'wb') as o:
+            o.write(etree.tostring(xml_doc))
+        context.envelope = etree.tostring(xml_doc)
+
+    def set_digest_value(self, xml_doc):
+        data = etree.tostring(xml_doc.find('.//ns0:SenderProvidedRequestData', self.NS_MAP))
+        transformed_data = Smev3Transform(data).run().encode()
+        with open('digest_content.xml', 'wb') as o:
+            o.write(transformed_data)
+        digest_value = xml_doc.find('.//ds:DigestValue', self.NS_MAP)
+        digest_value.text = base64.b64encode(get_gost_r_3410_digest(transformed_data)).decode()
+
+    def set_signature_value(self, xml_doc):
+        signed_info = etree.tostring(xml_doc.find('.//ds:SignedInfo', self.NS_MAP))
+        transformed_data = Smev3Transform(signed_info).run().encode()
+        with open('signed_content.xml', 'wb') as o:
+            o.write(transformed_data)
+        binary_signature = get_gost_r_34102001_signature(base64.b64encode(get_gost_r_3410_digest(transformed_data)),
+                                                         pkey_filename=self.pkey_path,
+                                                         passwd=self.pkey_password)
+        signature_value = xml_doc.find('.//ds:SignatureValue', self.NS_MAP)
+        signature_value.text = base64.b64encode(binary_signature)
 
     def build_callerinform(self, prefix):
         callerinform = self.create_element('CallerInformationSystemSignature', prefix=prefix)
@@ -152,55 +169,42 @@ class SignPlugin(BasePlugin):
         key_info.append(x509data)
         return key_info
 
-    def set_digest_value(self, xml):
-        pattern = re.compile(rb'<[a-z0-9]+:SenderProvidedRequestData[^>]+>.*</[a-z0-9]+:SenderProvidedRequestData>')
-        try:
-            content = re.findall(pattern, xml)[0]
-            with open('digest_content.xml', 'wb') as o:
-                o.write(content)
-        except IndexError:
-            raise PluginError('Не найден контент для хэширования')
-        else:
-            digest_hash = base64.b64encode(get_gost_r_3410_digest(content))
-        return xml.replace(self.DIGEST_VALUE.encode(), digest_hash)
-
-    def set_signature_value(self, xml):
-        pattern = re.compile(rb'<[a-z0-9]+:SignedInfo>.*</[a-z0-9]+:SignedInfo>')
-        try:
-            sign_info = re.findall(pattern, xml)[0]
-            with open('signed_content.xml', 'wb') as o:
-                o.write(sign_info)
-        except IndexError:
-            raise PluginError('Не найден элемент SignedInfo')
-        else:
-            sign_hash = get_gost_r_3410_digest(sign_info)
-        binary_signature = get_gost_r_34102001_signature(sign_hash,
-                                                         pkey_filename=self.pkey_path,
-                                                         passwd=self.pkey_password)
-        return xml.replace(self.SIGNATURE_VALUE.encode(), base64.b64encode(binary_signature))
-
-
     # def sending(self, context):
-        # xml_doc = etree.fromstring(context.envelope)
-        # self.set_digest_value(xml_doc)
-        # self.set_signature_value(xml_doc)
-        # print(encode_c14n(xml_doc))
-        # context.envelope = encode_c14n(xml_doc)
-
-    # def set_signature_value(self, xml_doc):
-    #     signed_info = xml_doc.find('.//ds:SignedInfo', self.NS_MAP)
-    #     signed_info_c14_data = encode_c14n(signed_info)
-    #     print(self.digest_hash)
-    #     binary_signature = get_gost_r_34102001_signature(self.digest_hash,
+    #     xml = context.envelope
+    #     with open('in.xml', 'wb') as o:
+    #         o.write(xml)
+    #
+    #     xml = self.set_digest_value(xml)
+    #     xml = self.set_signature_value(xml)
+    #     context.envelope = xml
+    #     with open('signed.xml', 'wb') as o:
+    #         o.write(context.envelope)
+    #
+    # def set_digest_value(self, xml):
+    #     pattern = re.compile(rb'<[a-z0-9]+:SenderProvidedRequestData[^>]+>.*</[a-z0-9]+:SenderProvidedRequestData>')
+    #     try:
+    #         content = re.findall(pattern, xml)[0]
+    #     except IndexError:
+    #         raise PluginError('Не найден контент для хэширования')
+    #     else:
+    #         transformed = Smev3Transform(content).run().encode()
+    #         with open('digest_content.xml', 'wb') as o:
+    #             o.write(transformed)
+    #         digest_hash = base64.b64encode(get_gost_r_3410_digest(transformed))
+    #     return xml.replace(self.DIGEST_VALUE.encode(), digest_hash)
+    #
+    # def set_signature_value(self, xml):
+    #     pattern = re.compile(rb'<[a-z0-9]+:SignedInfo>.*</[a-z0-9]+:SignedInfo>')
+    #     try:
+    #         sign_info = re.findall(pattern, xml)[0]
+    #     except IndexError:
+    #         raise PluginError('Не найден элемент SignedInfo')
+    #     else:
+    #         transformed = Smev3Transform(sign_info).run().encode()
+    #         with open('signed_content.xml', 'wb') as o:
+    #             o.write(transformed)
+    #         sign_hash = get_gost_r_3410_digest(transformed)
+    #     binary_signature = get_gost_r_34102001_signature(sign_hash,
     #                                                      pkey_filename=self.pkey_path,
     #                                                      passwd=self.pkey_password)
-    #     signature_value = xml_doc.find('.//ds:SignatureValue', self.NS_MAP)
-    #     signature_value.text = base64.b64encode(binary_signature)
-
-    # def set_digest_value(self, xml_doc):
-    #     digest_value = xml_doc.find('.//ds:DigestValue', self.NS_MAP)
-    #     data = xml_doc.find('.//ns0:SenderProvidedRequestData', self.NS_MAP)
-    #     body_c14_data = encode_c14n(data)
-    #     print(body_c14_data)
-    #     self.digest_hash = base64.b64encode(get_gost_r_3410_digest(body_c14_data))
-    #     digest_value.text = self.digest_hash
+    #     return xml.replace(self.SIGNATURE_VALUE.encode(), base64.b64encode(binary_signature))

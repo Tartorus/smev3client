@@ -9,10 +9,12 @@ class Smev3Transform:
     """Класс транформации xml элементов соггласно методочесикм рекомендациям"""
 
     def __init__(self, xml):
-        """:param xml :type bytes / string"""
+        """:param xml :type _Element / bytes / string"""
         if isinstance(xml, str):
             xml = xml.encode()
-        self.xml = fromstring(xml)
+        xml = fromstring(xml)
+
+        self.xml = xml
         self.ns_num = 1
         self.element_id = 1
         self.attrib_map = dict()
